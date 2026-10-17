@@ -129,6 +129,9 @@ function route() {
   } else if (h === "#/quiz") {
     state.current = null;
     renderQuiz();
+  } else if (h === "#/manage") {
+    state.current = null;
+    renderManage();
   } else {
     state.current = null;
     renderHome();
@@ -285,7 +288,7 @@ function renderTree() {
   }
   $("#tree").innerHTML = html;
   $$(".nav-item[data-view]").forEach((b) => b.classList.toggle("active",
-    (b.dataset.view === "home" && (location.hash === "#/" || !location.hash)) || (b.dataset.view === "graph" && location.hash === "#/graph") || (b.dataset.view === "assistant" && location.hash === "#/assistant") || (b.dataset.view === "quiz" && location.hash === "#/quiz")));
+    (b.dataset.view === "home" && (location.hash === "#/" || !location.hash)) || (b.dataset.view === "graph" && location.hash === "#/graph") || (b.dataset.view === "assistant" && location.hash === "#/assistant") || (b.dataset.view === "quiz" && location.hash === "#/quiz") || (b.dataset.view === "manage" && location.hash === "#/manage")));
 }
 
 // ═════════════ Accueil ═════════════
@@ -458,6 +461,133 @@ async function askAgent(text) {
     a.busy = null;
     drawAgent();
   }
+}
+
+// ═════════════ Gérer : sélection multiple ═════════════
+// Cocher plusieurs cours / chapitres / notes de la formation active, puis les supprimer ou les déplacer.
+
+const manage = { selected: new Set(), filter: "" };
+
+function renderManage() {
+  setCrumbs([{ label: "Accueil", href: "#/" }, { label: "Gérer les notes" }]);
+  const f = curFormation();
+  const all = DB.all();
+  const ids = new Set(all.map((n) => n.id));
+  [...manage.selected].forEach((id) => { if (!ids.has(id)) manage.selected.delete(id); });
+  const q = norm(manage.filter);
+  const match = (n) => !q || norm(n.title).includes(q) || norm(n.source?.name || "").includes(q);
+  const cours = all.filter((n) => n.type === "cours").sort((a, b) => a.createdAt - b.createdAt);
+  const loose = all.filter((n) => n.type !== "cours" && !(n.parentId && DB.get(n.parentId)?.formationId === f.id));
+  const groups = [...cours.map((c) => ({ c, items: DB.children(c.id).filter((n) => n.formationId === f.id) })), { c: null, items: loose }]
+    .map((g) => ({ ...g, items: g.items.filter(match), show: !q || (g.c && match(g.c)) || g.items.some(match) }))
+    .filter((g) => g.show && (g.c || g.items.length));
+  const n = manage.selected.size;
+
+  const row = (x) => `<label class="check m-item">
+    <input type="checkbox" data-mid="${x.id}" ${manage.selected.has(x.id) ? "checked" : ""} />
+    <span class="dot" style="background:var(--c-${x.type})"></span>
+    <span class="m-title">${esc(x.title || "Sans titre")}</span>
+    ${x.source?.kind === "pdf" ? `<small>📄${x.fiche ? " 📎" : x.content.trim() ? " ✦" : ""}</small>` : x.fiche ? "<small>📎</small>" : ""}
+  </label>`;
+
+  $("#topActions").innerHTML = "";
+  $("#view").innerHTML = `
+  <div class="home quiz">
+    <div class="hero">
+      <div class="fname" style="--fc:${f.color}"><i></i>${esc(f.name)}</div>
+      <h1>🗂️ Gérer les notes</h1>
+      <p>Coche ce que tu veux supprimer ou déplacer. Cocher un cours sélectionne aussi ses chapitres.</p>
+    </div>
+    <div class="m-bar">
+      <input id="mFilter" placeholder="Filtrer par nom…" value="${esc(manage.filter)}" />
+      <span class="quiz-sel">${n} sélectionné(s)</span>
+      <button class="btn" id="mAll">${n ? "Tout décocher" : "Tout cocher"}</button>
+      <button class="btn" id="mMove" ${n ? "" : "disabled"}>↪ Déplacer…</button>
+      <button class="btn danger" id="mDel" ${n ? "" : "disabled"}>🗑 Supprimer</button>
+    </div>
+    <div class="quiz-groups">${groups.map((g) => `
+      <div class="quiz-group">
+        ${g.c ? `<div class="quiz-group-head">${row(g.c)}<small style="color:var(--muted)">${DB.children(g.c.id).length} élément(s)</small></div>` : `<div class="quiz-group-head"><span>Sans cours</span></div>`}
+        <div class="m-children">${g.items.map(row).join("") || `<div class="conn-empty">Vide</div>`}</div>
+      </div>`).join("") || `<div class="empty-state"><b>Rien ici</b>${q ? "Aucun résultat pour ce filtre." : "Cette formation est vide."}</div>`}</div>
+  </div>`;
+
+  $("#mFilter").addEventListener("input", (e) => {
+    manage.filter = e.target.value;
+    const pos = e.target.selectionStart;
+    renderManage();
+    const el = $("#mFilter");
+    el.focus();
+    el.setSelectionRange(pos, pos);
+  });
+  $$("[data-mid]").forEach((c) => c.addEventListener("change", () => {
+    const x = DB.get(c.dataset.mid);
+    const on = c.checked;
+    const set = (id) => (on ? manage.selected.add(id) : manage.selected.delete(id));
+    set(x.id);
+    if (x.type === "cours") DB.children(x.id).forEach((k) => set(k.id));
+    renderManage();
+  }));
+  $("#mAll").addEventListener("click", () => {
+    if (manage.selected.size) manage.selected.clear();
+    else groups.forEach((g) => { if (g.c) manage.selected.add(g.c.id); g.items.forEach((x) => manage.selected.add(x.id)); });
+    renderManage();
+  });
+  $("#mDel").addEventListener("click", () => {
+    const sel = [...manage.selected].map((id) => DB.get(id)).filter(Boolean);
+    const pdfs = sel.filter((x) => x.source?.kind === "pdf").length;
+    modal(`<div class="modal-head">Supprimer ${sel.length} élément(s) ?</div>
+      <div class="modal-body"><p>Cette action est définitive${pdfs ? `, PDF et fiches compris (${pdfs} PDF)` : ""}.</p>
+      ${sel.some((x) => x.type === "cours" && DB.children(x.id).some((k) => !manage.selected.has(k.id))) ? `<small style="color:var(--amber)">Les chapitres non cochés des cours supprimés seront gardés, sans cours.</small>` : ""}</div>
+      <div class="modal-foot"><button class="btn" data-close>Annuler</button><button class="btn danger" id="mDelOk">Supprimer</button></div>`);
+    $("#mDelOk").addEventListener("click", async () => {
+      for (const x of sel) {
+        if (x.type === "cours") for (const k of DB.children(x.id)) if (!manage.selected.has(k.id)) { k.parentId = null; await DB.save(k); }
+        await DB.remove(x.id);
+        state.ai.delete(x.id);
+      }
+      manage.selected.clear();
+      closeModal();
+      toast(`${sel.length} élément(s) supprimé(s)`);
+      renderManage();
+      renderTabs();
+      renderTree();
+    });
+  });
+  $("#mMove").addEventListener("click", () => {
+    const sel = [...manage.selected].map((id) => DB.get(id)).filter(Boolean);
+    const hasCours = sel.some((x) => x.type === "cours");
+    const options = DB.formations().map((fo) => {
+      const cs = DB.everything().filter((x) => x.type === "cours" && x.formationId === fo.id && !manage.selected.has(x.id)).sort((a, b) => a.createdAt - b.createdAt);
+      return `<optgroup label="${esc(fo.name)}"><option value="${fo.id}|">${esc(fo.name)} — sans cours</option>
+        ${hasCours ? "" : cs.map((c) => `<option value="${fo.id}|${c.id}">${esc(fo.name)} › ${esc(c.title || "Sans titre")}</option>`).join("")}</optgroup>`;
+    }).join("");
+    modal(`<div class="modal-head">Déplacer ${sel.length} élément(s)</div>
+      <div class="modal-body">
+        <div class="field"><label>Vers</label><select id="mTarget">${options}</select>
+        ${hasCours ? `<small>La sélection contient des cours : ils sont déplacés dans la formation choisie, avec leurs chapitres.</small>` : ""}</div>
+      </div>
+      <div class="modal-foot"><button class="btn" data-close>Annuler</button><button class="btn-primary" id="mMoveOk">Déplacer</button></div>`);
+    $("#mMoveOk").addEventListener("click", async () => {
+      const [fid, cid] = $("#mTarget").value.split("|");
+      for (const x of sel) {
+        x.formationId = fid;
+        if (x.type === "cours") {
+          x.parentId = null;
+          for (const k of DB.children(x.id)) { k.formationId = fid; await DB.save(k); }
+        } else if (!(x.parentId && manage.selected.has(x.parentId))) {
+          x.parentId = cid || null;
+        }
+        await DB.save(x);
+      }
+      manage.selected.clear();
+      closeModal();
+      toast(`${sel.length} élément(s) déplacé(s) vers « ${DB.getFormation(fid).name}${cid ? ` › ${DB.get(cid).title}` : ""} »`);
+      renderManage();
+      renderTabs();
+      renderTree();
+    });
+  });
 }
 
 // ═════════════ Quiz ═════════════
@@ -799,6 +929,11 @@ function renderNote() {
     route();
   });
   $("#ficheView")?.addEventListener("click", () => showFichePdf(note, $("#body")));
+  $("[data-select-kids]")?.addEventListener("click", () => {
+    manage.selected = new Set(DB.children(note.id).map((k) => k.id));
+    manage.filter = "";
+    go("#/manage");
+  });
   $("#genModule")?.addEventListener("click", () => enqueueFiches(pendingFiches(note.id).map((n) => n.id)));
   $("#pdfGen")?.addEventListener("click", () => {
     if (queue.current === note.id || queue.ids.includes(note.id)) return toast("Déjà en cours de génération");
@@ -832,7 +967,7 @@ function connections(note) {
   const back = DB.backlinks(note);
   const list = (arr, empty) => arr.length ? `<div class="conn-list">${arr.map((n) => treeItem(n)).join("")}</div>` : `<div class="conn-empty">${empty}</div>`;
   let html = "";
-  if (note.type === "cours") html += `<div class="conn-box" style="grid-column:1/-1"><h4>Dans ce cours · ${kids.length}</h4>${list(kids, "Ajoute des notions ou fiches à ce cours avec les boutons + de la barre latérale.")}</div>`;
+  if (note.type === "cours") html += `<div class="conn-box" style="grid-column:1/-1"><h4 style="display:flex;justify-content:space-between">Dans ce cours · ${kids.length}${kids.length ? `<a data-select-kids="${note.id}" style="color:var(--cyan);cursor:pointer;text-transform:none;letter-spacing:0;font-weight:500">Sélectionner…</a>` : ""}</h4>${list(kids, "Ajoute des notions ou fiches à ce cours avec les boutons + de la barre latérale.")}</div>`;
   html += `<div class="conn-box"><h4>Liens sortants · ${out.length}</h4>${list(out, "Écris [[Nom]] pour relier une autre note.")}</div>`;
   html += `<div class="conn-box"><h4>Mentionnée dans · ${back.length}</h4>${list(back, "Aucune note ne pointe encore ici.")}</div>`;
   return html;
@@ -974,10 +1109,16 @@ function confirmDelete(note) {
   const kids = DB.children(note.id);
   modal(`
     <div class="modal-head">Supprimer « ${esc(note.title || "Sans titre")} » ?</div>
-    <div class="modal-body"><p>Cette action est définitive.${kids.length ? ` Les ${kids.length} note(s) de ce cours seront conservées mais détachées.` : ""}</p></div>
+    <div class="modal-body"><p>Cette action est définitive.</p>
+      ${kids.length ? `<label class="check"><input type="checkbox" id="delKids" checked /> Supprimer aussi ses ${kids.length} chapitre(s) / note(s), avec leurs PDF et leurs fiches</label>
+      <small style="color:var(--muted)">Décoche pour les garder (ils deviennent des notes sans cours).</small>` : ""}</div>
     <div class="modal-foot"><button class="btn" data-close>Annuler</button><button class="btn danger" id="doDel">Supprimer</button></div>`);
   $("#doDel").addEventListener("click", async () => {
-    for (const k of kids) { k.parentId = null; await DB.save(k); }
+    const withKids = $("#delKids")?.checked;
+    for (const k of kids) {
+      if (withKids) { await DB.remove(k.id); state.ai.delete(k.id); }
+      else { k.parentId = null; await DB.save(k); }
+    }
     await DB.remove(note.id);
     state.ai.delete(note.id);
     closeModal();
@@ -1167,29 +1308,66 @@ async function filesFromDrop(dt) {
   return [...dt.files].map((file) => ({ file, path: file.name }));
 }
 
-// Regroupe les fichiers par (formation, module). Un sous-dossier "Fiches" / "Synthèses" dans un module
-// contient les fiches de ce module. Dans chaque groupe, on sépare les chapitres (PDF du cours) des fiches.
-function planImport(entries, flatten, looseCoursId = null) {
+// L'utilisateur dit ce que contient le dossier (plusieurs formations, une formation, un module)
+// et vers quelle formation l'importer : rien n'est deviné à partir de l'onglet actif.
+//   multi  : Racine / Formation / Module / … / fichier
+//   one    : Formation(racine) / Module / … / fichier
+//   module : Module(racine) / … / fichier
+//   files  : fichiers seuls
+// Les sous-dossiers plus profonds sont rangés dans le module ; un sous-dossier "Fiches" contient les fiches.
+const IMPORT_MODES = {
+  multi: "Plusieurs formations",
+  one: "Une formation",
+  module: "Un module",
+};
+
+const findFormation = (name) => DB.formations().find((f) => norm(f.name) === norm(name));
+const findCours = (fid, title) => DB.everything().find((n) => n.type === "cours" && n.formationId === fid && norm(n.title) === norm(title));
+const segsOf = (e) => e.path.split("/").slice(0, -1).filter((d) => !FICHE_DIR.test(d));
+const inFicheDir = (e) => e.path.split("/").slice(0, -1).some((d) => FICHE_DIR.test(d));
+
+function guessImport(entries) {
+  const segs = entries.map(segsOf);
+  const depth = Math.max(0, ...segs.map((s) => s.length));
+  if (!depth) return { mode: "files", dest: DB.getScope() };
+  const root = segs.find((s) => s.length)?.[0] || "";
+  const rootF = findFormation(root);
+  if (rootF) return { mode: "one", dest: rootF.id };
+  if (segs.some((s) => s[1] && findFormation(s[1]))) return { mode: "multi", dest: DB.getScope() };
+  if (depth >= 3) return { mode: "multi", dest: DB.getScope() };
+  if (depth === 2) return { mode: "one", dest: "__new" };
+  return { mode: "module", dest: DB.getScope() };
+}
+
+// Regroupe les fichiers par (formation, module) selon les réglages choisis.
+function planImport(entries, { mode, dest, looseCoursId }) {
   const groups = new Map();
   for (const e of entries) {
-    let dirs = e.path.split("/").slice(0, -1);
-    const inFicheDir = dirs.length && FICHE_DIR.test(dirs.at(-1));
-    if (inFicheDir) dirs = dirs.slice(0, -1);
-    let fname = null, mname = null;
-    if (!flatten && dirs.length >= 2) { fname = dirs.at(-2); mname = dirs.at(-1); }
-    else if (dirs.length) mname = dirs.at(-1);
-    const key = `${fname ?? ""}\u0000${mname ?? ""}`;
-    if (!groups.has(key)) groups.set(key, { fname, mname, chapters: [], fiches: [] });
-    const isChapter = isPdf(e.file) && !inFicheDir && !looksLikeFiche(e.file.name);
+    const segs = segsOf(e);
+    let fname = null, fid = null, mname = null;
+    if (mode === "multi" && segs.length >= 2) {
+      fname = segs[1];
+      fid = findFormation(fname)?.id || null;
+      mname = segs[2] ?? null;
+    } else {
+      if (dest === "__new") fname = segs[0] || "Nouvelle formation";
+      else fid = dest;
+      if (mode === "multi") mname = null; // fichier posé directement à la racine
+      else if (mode === "one") mname = segs[1] ?? null;
+      else if (mode === "module") mname = segs[0] ?? null;
+    }
+    if (fid) fname = DB.getFormation(fid)?.name || fname;
+    const key = `${fid || "new:" + norm(fname)}\u0000${mname ? norm(mname) : ""}`;
+    if (!groups.has(key)) groups.set(key, { fid, fname, mname, chapters: [], fiches: [] });
+    const isChapter = isPdf(e.file) && !inFicheDir(e) && !looksLikeFiche(e.file.name);
     groups.get(key)[isChapter ? "chapters" : "fiches"].push(e);
   }
   const list = [...groups.values()];
   for (const g of list) {
-    g.chapters.sort((a, b) => natural(a.file.name, b.file.name));
-    g.fiches.sort((a, b) => natural(a.file.name, b.file.name));
-    // Associe chaque fiche à un chapitre du même nom (dans l'import, ou déjà présent dans le module).
-    const f = g.fname ? findFormation(g.fname) : curFormation();
-    const cours = f && g.mname ? findCours(f.id, g.mname) : !g.mname && looseCoursId ? DB.get(looseCoursId) : null;
+    g.chapters.sort((a, b) => natural(a.path, b.path));
+    g.fiches.sort((a, b) => natural(a.path, b.path));
+    const cours = g.fid && g.mname ? findCours(g.fid, g.mname) : !g.mname && looseCoursId ? DB.get(looseCoursId) : null;
+    g.coursExists = !!(cours && g.mname);
     const existing = cours ? DB.children(cours.id) : [];
     const keys = new Set([...g.chapters.map((e) => chapKey(e.file.name)), ...existing.map((n) => chapKey(n.title))]);
     g.fiches.forEach((e) => { e.match = keys.has(chapKey(e.file.name)); });
@@ -1197,26 +1375,34 @@ function planImport(entries, flatten, looseCoursId = null) {
   return list.sort((a, b) => natural(a.fname || "", b.fname || "") || natural(a.mname || "", b.mname || ""));
 }
 
-const findFormation = (name) => DB.formations().find((f) => norm(f.name) === norm(name));
-const findCours = (fid, title) => DB.everything().find((n) => n.type === "cours" && n.formationId === fid && norm(n.title) === norm(title));
-
 function startImport(rawEntries) {
   const entries = rawEntries.filter((e) => !e.path.split("/").some((p) => p.startsWith(".")) && isFicheFile(e.file.name));
   if (!entries.length) return toast("Aucun fichier compatible (PDF, Markdown, texte, HTML, Word)", true);
   const tooBig = entries.filter((e) => isPdf(e.file) && e.file.size > AI.maxPdfBytes());
   const cur = DB.get(state.current);
-  const defaultCours = cur ? (cur.type === "cours" ? cur.id : cur.parentId) : "";
-  let flatten = false;
+  const opts = { ...guessImport(entries), looseCoursId: cur ? (cur.type === "cours" ? cur.id : cur.parentId) : null };
+  const root = segsOf(entries.find((e) => segsOf(e).length) || { path: "" })[0] || "";
 
   const draw = () => {
-    const plan = planImport(entries, flatten, $("#looseCours")?.value ?? defaultCours);
-    const curF = curFormation();
-    const coursList = DB.all().filter((n) => n.type === "cours").sort((a, b) => a.createdAt - b.createdAt);
-    const hasDepth = entries.some((e) => e.path.split("/").filter((d) => !FICHE_DIR.test(d)).length >= 3);
+    const plan = planImport(entries, opts);
+    const isFiles = opts.mode === "files";
+    $("#impMode").hidden = isFiles;
+    $$("[data-imode]").forEach((b) => b.classList.toggle("on", b.dataset.imode === opts.mode));
+    $("#impDestRow").hidden = opts.mode === "multi";
+    $("#impDest").innerHTML = DB.formations().map((f) => `<option value="${f.id}" ${opts.dest === f.id ? "selected" : ""}>${esc(f.name)}</option>`).join("")
+      + (opts.mode === "one" && root ? `<option value="__new" ${opts.dest === "__new" ? "selected" : ""}>＋ Nouvel onglet « ${esc(root)} »</option>` : "");
+    if (opts.dest === "__new" && !(opts.mode === "one" && root)) opts.dest = DB.getScope();
+    $("#impHint").innerHTML = {
+      multi: `Chaque sous-dossier de <b>${esc(root)}</b> est une formation (rangée dans l'onglet du même nom), et chacun de ses sous-dossiers un module.`,
+      one: `<b>${esc(root)}</b> est une formation : chacun de ses sous-dossiers devient un module.`,
+      module: `<b>${esc(root)}</b> est un module : ses fichiers deviennent ses chapitres.`,
+      files: `Les fichiers sont rangés dans la formation et le cours choisis.`,
+    }[opts.mode];
+
+    const destF = opts.dest !== "__new" ? DB.getFormation(opts.dest) : null;
+    const coursList = destF ? DB.everything().filter((n) => n.type === "cours" && n.formationId === destF.id).sort((a, b) => a.createdAt - b.createdAt) : [];
     $("#importPlan").innerHTML = plan.map((g) => {
-      const f = g.fname ? findFormation(g.fname) : curF;
-      const fNew = g.fname && !f;
-      const mNew = g.mname && !(f && findCours(f.id, g.mname));
+      const f = g.fid ? DB.getFormation(g.fid) : null;
       const matched = g.fiches.filter((e) => e.match);
       const others = g.fiches.filter((e) => !e.match);
       const parts = [
@@ -1226,14 +1412,13 @@ function startImport(rawEntries) {
       ].filter(Boolean).join(" · ");
       return `<div class="imp-group">
         <div class="imp-path">
-          <span class="fbadge" style="--fc:${f?.color || "var(--muted)"}"><i></i>${esc(g.fname || curF.name)}</span>${fNew ? `<span class="imp-new">nouvel onglet</span>` : ""}
-          ${g.mname ? `<span class="sep">›</span><span class="badge t-cours">Module</span> ${esc(g.mname)}${mNew ? `<span class="imp-new">nouveau</span>` : ""}`
-            : `<span class="sep">›</span><select id="looseCours"><option value="">— Sans cours —</option>${coursList.map((c) => `<option value="${c.id}" ${c.id === defaultCours ? "selected" : ""}>${esc(c.title || "Sans titre")}</option>`).join("")}</select>`}
+          <span class="fbadge" style="--fc:${f?.color || "var(--green)"}"><i></i>${esc(g.fname)}</span>${f ? `<span class="imp-ok">onglet existant</span>` : `<span class="imp-new">nouvel onglet</span>`}
+          ${g.mname ? `<span class="sep">›</span><span class="badge t-cours">Module</span> ${esc(g.mname)}${g.coursExists ? `<span class="imp-ok">module existant</span>` : `<span class="imp-new">nouveau</span>`}`
+            : `<span class="sep">›</span><select data-loose>${coursList.length ? "" : ""}<option value="">— Sans cours —</option>${coursList.map((c) => `<option value="${c.id}" ${c.id === opts.looseCoursId ? "selected" : ""}>${esc(c.title || "Sans titre")}</option>`).join("")}</select>`}
         </div>
         <div class="imp-files">${parts}<br/>${[...g.chapters, ...g.fiches].map((e) => `${e.match ? "📎 " : ""}${esc(e.file.name)}`).join(" · ")}</div>
       </div>`;
     }).join("");
-    $("#flattenRow").hidden = !hasDepth;
     const nMatched = plan.reduce((s, g) => s + g.fiches.filter((e) => e.match).length, 0);
     $("#replaceRow").hidden = !nMatched;
   };
@@ -1241,28 +1426,36 @@ function startImport(rawEntries) {
   modal(`
     <div class="modal-head">📁 Importer ${entries.length} fichier${entries.length > 1 ? "s" : ""}</div>
     <div class="modal-body">
-      <p>Ton arborescence est recréée : <b style="color:var(--text)">formation › module › chapitres</b>. Tes propres fiches (même nom que le chapitre, ex. <i>Chapter 1.md</i> ou <i>Chapter 1 - fiche.pdf</i>, ou rangées dans un sous-dossier <i>Fiches</i>) sont attachées à leur chapitre 📎.</p>
-      <div id="importPlan" class="imp-plan"></div>
-      <label class="check" id="flattenRow"><input type="checkbox" id="flatten" /> Tout mettre dans l'onglet actif « ${esc(curFormation().name)} » (ignorer le dossier formation)</label>
+      <div class="field" id="impMode"><label>Ce dossier contient</label>
+        <div class="chips">${Object.entries(IMPORT_MODES).map(([k, v]) => `<button type="button" data-imode="${k}">${v}</button>`).join("")}</div>
+        <small id="impHint"></small></div>
+      <div class="field" id="impDestRow"><label>Formation de destination</label><select id="impDest"></select></div>
+      <div class="field"><label>Aperçu : voici où tout va être rangé</label><div id="importPlan" class="imp-plan"></div></div>
+      <small style="color:var(--muted)">Tes propres fiches (même nom que le chapitre, ex. <i>Chapter 1.md</i> ou <i>Chapter 1 - fiche.pdf</i>, ou dans un sous-dossier <i>Fiches</i>) sont attachées à leur chapitre 📎.</small>
       <label class="check" id="replaceRow"><input type="checkbox" id="replaceFiches" /> Remplacer les fiches déjà présentes sur ces chapitres</label>
       <label class="check"><input type="checkbox" id="genAi" ${AI.hasKey() ? "checked" : "disabled"} /> ✦ Générer une fiche IA pour les chapitres qui n'ont pas de fiche${AI.hasKey() ? "" : " (ajoute ta clé dans Réglages)"}</label>
-      <small style="color:var(--muted)">Le texte des PDF est lu sur ton ordi (gratuit). Les fiches IA se font une par une en arrière-plan (1 requête par PDF).</small>
       ${tooBig.length ? `<small style="color:var(--amber)">${tooBig.length} PDF dépasse${tooBig.length > 1 ? "nt" : ""} ${AI.maxPdfBytes() / 1024 / 1024} Mo : importé${tooBig.length > 1 ? "s" : ""} et cherchable${tooBig.length > 1 ? "s" : ""}, mais sans fiche IA.</small>` : ""}
       <div id="importProgress" hidden><div class="progress"><i></i></div><p style="margin-top:8px;font-size:12.5px;color:var(--muted)" id="importStatus"></p></div>
     </div>
     <div class="modal-foot"><button class="btn" data-close id="importCancel">Annuler</button><button class="btn-primary" id="importGo">Importer</button></div>`, { lock: true });
   draw();
-  $("#flatten").addEventListener("change", (e) => { flatten = e.target.checked; draw(); });
-  $("#importPlan").addEventListener("change", (e) => { if (e.target.id === "looseCours") { const v = e.target.value; draw(); $("#looseCours").value = v; } });
+  $$("[data-imode]").forEach((b) => b.addEventListener("click", () => {
+    opts.mode = b.dataset.imode;
+    if (opts.mode === "one" && !findFormation(root)) opts.dest = "__new";
+    else if (opts.mode === "one") opts.dest = findFormation(root).id;
+    draw();
+  }));
+  $("#impDest").addEventListener("change", (e) => { opts.dest = e.target.value; opts.looseCoursId = null; draw(); });
+  $("#importPlan").addEventListener("change", (e) => { if (e.target.matches("[data-loose]")) opts.looseCoursId = e.target.value || null; });
 
   let cancelled = false;
   $("#importCancel").addEventListener("click", () => { cancelled = true; });
   $("#importGo").addEventListener("click", async () => {
-    const looseCours = $("#looseCours")?.value || null;
-    const plan = planImport(entries, flatten, looseCours);
+    const plan = planImport(entries, opts);
     const genAi = $("#genAi").checked;
     const replace = $("#replaceFiches").checked;
     $("#importGo").disabled = true;
+    $$("#modal button[data-imode], #impDest").forEach((x) => (x.disabled = true));
     $("#importProgress").hidden = false;
     const created = [], chaptersTouched = [];
     let skipped = 0, attached = 0, done = 0, firstTarget = null, firstFormation = null;
@@ -1270,23 +1463,24 @@ function startImport(rawEntries) {
 
     for (const g of plan) {
       if (cancelled) break;
-      let f = g.fname ? findFormation(g.fname) : curFormation();
+      let f = g.fid ? DB.getFormation(g.fid) : findFormation(g.fname);
       if (!f) f = await DB.saveFormation(DB.createFormation(g.fname));
-      let parentId = looseCours;
+      let parentId = g.mname ? null : (opts.looseCoursId && DB.get(opts.looseCoursId)?.formationId === f.id ? opts.looseCoursId : null);
       if (g.mname) {
         parentId = (findCours(f.id, g.mname) || (await DB.save(DB.create({ type: "cours", title: g.mname, formationId: f.id })))).id;
       }
       firstFormation ??= f.id;
       firstTarget ??= parentId;
-      const base = DB.children(parentId || "").length;
-      // Chapitres du module, par clé de nom, pour y attacher les fiches.
+      const siblings = () => DB.everything().filter((n) => n.formationId === f.id && n.parentId === parentId);
+      const base = siblings().length;
+      // Chapitres déjà présents dans CE module de CETTE formation, par clé de nom.
       const byKey = new Map();
-      DB.everything().filter((n) => n.formationId === f.id && n.parentId === parentId).forEach((n) => byKey.set(chapKey(n.title), n));
+      siblings().forEach((n) => byKey.set(chapKey(n.title), n));
 
       for (const [i, e] of g.chapters.entries()) {
         if (cancelled) break;
         status(e);
-        const already = DB.everything().find((n) => n.formationId === f.id && n.source?.path === e.path);
+        const already = siblings().find((n) => n.source?.kind === "pdf" && norm(n.source.name) === norm(e.file.name));
         if (already) { skipped++; byKey.set(chapKey(already.title), already); chaptersTouched.push(already.id); continue; }
         const note = DB.create({
           type: "fiche", title: stripExt(e.file.name), parentId, formationId: f.id, tags: ["pdf"],
@@ -1318,7 +1512,7 @@ function startImport(rawEntries) {
             continue;
           }
           // Fichier sans chapitre correspondant : il devient une fiche à part dans le module.
-          if (DB.everything().some((n) => n.formationId === f.id && n.source?.path === e.path)) { skipped++; continue; }
+          if (siblings().some((n) => n.source && norm(n.source.name) === norm(e.file.name))) { skipped++; continue; }
           const note = DB.create({
             type: "fiche", title: stripExt(e.file.name), parentId, formationId: f.id,
             source: { kind: "fichier", name: e.file.name, path: e.path, size: e.file.size },

@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Synapse — second cerveau & suivi de projet</title>
+  <meta name="description" content="Formations (notes, fiches, quiz, IA) et suivi de projet (tâches, projets, agenda) dans une seule app." />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='14' fill='%230b0d14'/><circle cx='10' cy='12' r='3' fill='%23a78bfa'/><circle cx='22' cy='11' r='3' fill='%2322d3ee'/><circle cx='16' cy='22' r='3' fill='%23f472b6'/><path d='M10 12L22 11L16 22Z' stroke='%23e5e7eb' stroke-width='1' fill='none' opacity='.6'/></svg>" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/style.css" />
+  <link rel="stylesheet" href="css/pilot.css" />
+</head>
+<body>
+  <div class="app">
+    <!-- ───────── Sidebar ───────── -->
+    <aside class="sidebar" id="sidebar">
+      <div class="brand">
+        <div class="logo"><span></span><span></span><span></span></div>
+        <div>
+          <div class="brand-name">Synapse</div>
+          <div class="brand-sub">Second cerveau · Suivi de projet</div>
+        </div>
+      </div>
+
+      <div class="space-tabs" role="tablist">
+        <button class="space-tab" data-space="learn" role="tab">📚 Formation</button>
+        <button class="space-tab" data-space="pilot" role="tab">🚀 Suivi de projet</button>
+      </div>
+
+      <div class="space" data-space-panel="learn">
+
+      <button class="search-trigger" id="openSearch">
+        <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <span>Rechercher…</span>
+        <kbd>Ctrl K</kbd>
+      </button>
+
+      <div class="new-row">
+        <button class="btn-new" data-new="cours">+ Cours</button>
+        <button class="btn-new" data-new="notion">+ Notion</button>
+        <button class="btn-new" data-new="fiche">+ Fiche</button>
+      </div>
+
+      <div class="import-row">
+        <button class="btn-pdf" id="pdfBtn" title="Importer un ou plusieurs PDF">
+          <svg viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M12 12v6m-3-3 3 3 3-3"/></svg>
+          PDF
+        </button>
+        <button class="btn-pdf btn-dir" id="dirBtn" title="Importer un dossier (formation › module › chapitres)">
+          <svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+          Dossier
+        </button>
+      </div>
+      <input type="file" id="pdfInput" accept="application/pdf,.md,.markdown,.txt,.html,.htm,.docx" multiple hidden />
+      <input type="file" id="dirInput" webkitdirectory multiple hidden />
+
+      <nav class="nav">
+        <button class="nav-item" data-view="home">
+          <svg viewBox="0 0 24 24"><path d="M3 11 12 4l9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg> Accueil
+        </button>
+        <button class="nav-item" data-view="assistant">
+          <svg viewBox="0 0 24 24"><path d="M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/></svg> Assistant
+        </button>
+        <button class="nav-item" data-view="quiz">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.5"/></svg> Quiz
+        </button>
+        <button class="nav-item" data-view="graph">
+          <svg viewBox="0 0 24 24"><circle cx="6" cy="6" r="2.5"/><circle cx="18" cy="8" r="2.5"/><circle cx="11" cy="18" r="2.5"/><path d="M8.3 6.6 15.6 7.6M7.2 8.2l2.6 7.6M16.6 10.1l-4.2 5.8"/></svg> Graphe
+        </button>
+      </nav>
+
+      <div class="tree" id="tree"></div>
+      </div>
+
+      <div class="space" data-space-panel="pilot" hidden>
+        <form class="t-add side-add" id="quickTask"><input placeholder="+ Tâche pour aujourd'hui" /></form>
+        <nav class="nav">
+          <button class="nav-item" data-pnav="dashboard">
+            <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg> Tableau de bord
+          </button>
+          <button class="nav-item" data-pnav="tasks">
+            <svg viewBox="0 0 24 24"><path d="M9 11l3 3 8-8"/><path d="M20 12v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9"/></svg> Tâches
+          </button>
+          <button class="nav-item" data-pnav="projects">
+            <svg viewBox="0 0 24 24"><rect x="3" y="4" width="5" height="16" rx="1.5"/><rect x="10" y="4" width="5" height="10" rx="1.5"/><rect x="17" y="4" width="4" height="7" rx="1.5"/></svg> Projets
+          </button>
+          <button class="nav-item" data-pnav="agenda">
+            <svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg> Agenda
+          </button>
+          <button class="nav-item" data-pnav="memos">
+            <svg viewBox="0 0 24 24"><path d="M5 3h10l4 4v14H5z"/><path d="M15 3v4h4M8 12h8M8 16h5"/></svg> Bloc-notes & post-its
+          </button>
+        </nav>
+        <div class="tree" id="pilotSummary"></div>
+      </div>
+
+      <div class="sidebar-foot">
+        <button class="ghost-btn" id="settingsBtn">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+          Réglages & sauvegarde
+        </button>
+      </div>
+    </aside>
+
+    <!-- ───────── Main ───────── -->
+    <main class="main" id="main">
+      <nav class="ftabs" id="ftabs" aria-label="Formations"></nav>
+      <header class="topbar">
+        <button class="icon-btn mobile-only" id="menuBtn" aria-label="Menu">
+          <svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+        </button>
+        <div class="crumbs" id="crumbs"></div>
+        <div class="top-actions" id="topActions"></div>
+      </header>
+      <section class="view" id="view"></section>
+    </main>
+
+    <!-- ───────── AI panel ───────── -->
+    <aside class="ai-panel" id="aiPanel" aria-hidden="true">
+      <div class="ai-head">
+        <div class="ai-title"><span class="spark">✦</span> Décortiquer avec l'IA</div>
+        <button class="icon-btn" id="aiClose" aria-label="Fermer">
+          <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>
+        </button>
+      </div>
+      <div class="ai-context" id="aiContext"></div>
+      <div class="ai-modes" id="aiModes">
+        <button data-mode="deep">🔬 En profondeur</button>
+        <button data-mode="simple">🧒 Explique simplement</button>
+        <button data-mode="examples">🧪 Exemples concrets</button>
+        <button data-mode="quiz">❓ Quiz moi</button>
+        <button data-mode="gaps">🧩 Ce qui manque</button>
+      </div>
+      <div class="ai-thread" id="aiThread"></div>
+      <form class="ai-input" id="aiForm">
+        <textarea id="aiQuestion" rows="2" placeholder="Pose une question sur ce cours… (Entrée pour envoyer)"></textarea>
+        <button type="submit" class="btn-primary" id="aiSend">Envoyer</button>
+      </form>
+    </aside>
+  </div>
+
+  <!-- Search palette -->
+  <div class="overlay" id="searchOverlay" hidden>
+    <div class="palette">
+      <div class="palette-input">
+        <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <input id="searchInput" placeholder="Chercher une note, une notion, un mot…" autocomplete="off" />
+        <kbd>Échap</kbd>
+      </div>
+      <div class="palette-filters" id="searchFilters">
+        <button data-f="all" class="on">Tout</button>
+        <button data-f="cours">Cours</button>
+        <button data-f="notion">Notions</button>
+        <button data-f="fiche">Fiches</button>
+        <span class="sp"></span>
+        <button id="searchScope" title="Chercher dans toutes les formations">Cette formation</button>
+      </div>
+      <div class="palette-results" id="searchResults"></div>
+    </div>
+  </div>
+
+  <!-- Generic modal -->
+  <div class="overlay" id="modalOverlay" hidden>
+    <div class="modal" id="modal"></div>
+  </div>
+
+  <!-- Drop zone -->
+  <div class="dropzone" id="dropzone" hidden>
+    <div class="dropzone-inner">
+      <div class="drop-icon">📄</div>
+      <div>Lâche tes PDF ou ton dossier ici</div>
+      <small>Formation › module › chapitres : l’arborescence est recréée</small>
+    </div>
+  </div>
+
+  <div class="toasts" id="toasts"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/marked@17.0.6/lib/marked.umd.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.2.6/dist/purify.min.js"></script>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

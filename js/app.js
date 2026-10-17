@@ -5,6 +5,7 @@ import { renderGraph } from "./graph.js";
 import { runAgent, describeStep } from "./agent.js";
 import { extractText } from "./pdf.js";
 import { attachFiche, detachFiche, hasFiche, chapKey, looksLikeFiche, isFicheFile, FICHE_ACCEPT, FICHE_DIR } from "./fiche.js";
+import { initCerts, renderCerts, addCertFromFile } from "./certs.js";
 import { initPilot, renderToday, renderTasks, renderProjects, renderAgenda, renderMemos, openWeatherSettings } from "./pilot.js";
 
 const $ = (s, el = document) => el.querySelector(s);
@@ -132,6 +133,9 @@ function route() {
   } else if (h === "#/manage") {
     state.current = null;
     renderManage();
+  } else if (h === "#/certs") {
+    state.current = null;
+    renderCerts();
   } else {
     state.current = null;
     renderHome();
@@ -266,7 +270,7 @@ function treeItem(n, count) {
 
 function renderTree() {
   const all = DB.all().sort((a, b) => (a.title || "").localeCompare(b.title || "", "fr"));
-  const cours = all.filter((n) => n.type === "cours").sort((a, b) => a.createdAt - b.createdAt);
+  const cours = all.filter((n) => n.type === "cours").sort(DB.byOrder);
   const loose = (t) => all.filter((n) => n.type === t && !(n.parentId && DB.get(n.parentId)));
   const openId = state.current && DB.get(state.current);
   const openCours = openId && (openId.type === "cours" ? openId.id : openId.parentId);
@@ -288,7 +292,7 @@ function renderTree() {
   }
   $("#tree").innerHTML = html;
   $$(".nav-item[data-view]").forEach((b) => b.classList.toggle("active",
-    (b.dataset.view === "home" && (location.hash === "#/" || !location.hash)) || (b.dataset.view === "graph" && location.hash === "#/graph") || (b.dataset.view === "assistant" && location.hash === "#/assistant") || (b.dataset.view === "quiz" && location.hash === "#/quiz") || (b.dataset.view === "manage" && location.hash === "#/manage")));
+    (b.dataset.view === "home" && (location.hash === "#/" || !location.hash)) || (b.dataset.view === "graph" && location.hash === "#/graph") || (b.dataset.view === "assistant" && location.hash === "#/assistant") || (b.dataset.view === "quiz" && location.hash === "#/quiz") || (b.dataset.view === "manage" && location.hash === "#/manage") || (b.dataset.view === "certs" && location.hash === "#/certs")));
 }
 
 // ═════════════ Accueil ═════════════
@@ -476,19 +480,26 @@ function renderManage() {
   [...manage.selected].forEach((id) => { if (!ids.has(id)) manage.selected.delete(id); });
   const q = norm(manage.filter);
   const match = (n) => !q || norm(n.title).includes(q) || norm(n.source?.name || "").includes(q);
-  const cours = all.filter((n) => n.type === "cours").sort((a, b) => a.createdAt - b.createdAt);
-  const loose = all.filter((n) => n.type !== "cours" && !(n.parentId && DB.get(n.parentId)?.formationId === f.id));
+  const cours = all.filter((n) => n.type === "cours").sort(DB.byOrder);
+  const loose = all.filter((n) => n.type !== "cours" && !(n.parentId && DB.get(n.parentId)?.formationId === f.id)).sort(DB.byOrder);
   const groups = [...cours.map((c) => ({ c, items: DB.children(c.id).filter((n) => n.formationId === f.id) })), { c: null, items: loose }]
     .map((g) => ({ ...g, items: g.items.filter(match), show: !q || (g.c && match(g.c)) || g.items.some(match) }))
     .filter((g) => g.show && (g.c || g.items.length));
   const n = manage.selected.size;
 
-  const row = (x) => `<label class="check m-item">
-    <input type="checkbox" data-mid="${x.id}" ${manage.selected.has(x.id) ? "checked" : ""} />
-    <span class="dot" style="background:var(--c-${x.type})"></span>
-    <span class="m-title">${esc(x.title || "Sans titre")}</span>
-    ${x.source?.kind === "pdf" ? `<small>📄${x.fiche ? " 📎" : x.content.trim() ? " ✦" : ""}</small>` : x.fiche ? "<small>📎</small>" : ""}
-  </label>`;
+  // Le tri à la main n'a de sens que sur la liste complète : désactivé pendant un filtre.
+  const canSort = !q;
+  const grpOf = (x) => (x.type === "cours" ? "cours" : x.parentId && DB.get(x.parentId)?.formationId === f.id ? x.parentId : "loose");
+  const row = (x) => `<div class="m-row" data-rid="${x.id}" data-grp="${grpOf(x)}" ${canSort ? `draggable="true"` : ""}>
+    ${canSort ? `<span class="m-handle" title="Glisser pour réorganiser">⋮⋮</span>` : ""}
+    <label class="check m-item">
+      <input type="checkbox" data-mid="${x.id}" ${manage.selected.has(x.id) ? "checked" : ""} />
+      <span class="dot" style="background:var(--c-${x.type})"></span>
+      <span class="m-title">${esc(x.title || "Sans titre")}</span>
+      ${x.source?.kind === "pdf" ? `<small>📄${x.fiche ? " 📎" : x.content.trim() ? " ✦" : ""}</small>` : x.fiche ? "<small>📎</small>" : ""}
+    </label>
+    ${canSort ? `<span class="m-arrows"><button class="icon-btn sm" data-up title="Monter">↑</button><button class="icon-btn sm" data-down title="Descendre">↓</button></span>` : ""}
+  </div>`;
 
   $("#topActions").innerHTML = "";
   $("#view").innerHTML = `
@@ -496,7 +507,7 @@ function renderManage() {
     <div class="hero">
       <div class="fname" style="--fc:${f.color}"><i></i>${esc(f.name)}</div>
       <h1>🗂️ Gérer les notes</h1>
-      <p>Coche ce que tu veux supprimer ou déplacer. Cocher un cours sélectionne aussi ses chapitres.</p>
+      <p>Coche ce que tu veux supprimer ou déplacer (cocher un cours sélectionne aussi ses chapitres). Pour changer l'ordre, glisse avec ⋮⋮ ou utilise ↑ ↓.</p>
     </div>
     <div class="m-bar">
       <input id="mFilter" placeholder="Filtrer par nom…" value="${esc(manage.filter)}" />
@@ -504,10 +515,13 @@ function renderManage() {
       <button class="btn" id="mAll">${n ? "Tout décocher" : "Tout cocher"}</button>
       <button class="btn" id="mMove" ${n ? "" : "disabled"}>↪ Déplacer…</button>
       <button class="btn danger" id="mDel" ${n ? "" : "disabled"}>🗑 Supprimer</button>
+      ${cours.length > 1 && canSort ? `<button class="btn" id="mSortCours" title="Trie les cours par nom : 1, 2… 10">⇅ Trier les cours 1, 2… 10</button>` : ""}
     </div>
     <div class="quiz-groups">${groups.map((g) => `
       <div class="quiz-group">
-        ${g.c ? `<div class="quiz-group-head">${row(g.c)}<small style="color:var(--muted)">${DB.children(g.c.id).length} élément(s)</small></div>` : `<div class="quiz-group-head"><span>Sans cours</span></div>`}
+        ${g.c ? `<div class="quiz-group-head">${row(g.c)}<small style="color:var(--muted);white-space:nowrap">${DB.children(g.c.id).length} élément(s)</small>
+          ${canSort && g.items.length > 1 ? `<button class="btn m-sort" data-sortkids="${g.c.id}" title="Trie les chapitres par nom : 1, 2… 10">⇅ 1…10</button>` : ""}</div>`
+          : `<div class="quiz-group-head"><span>Sans cours</span>${canSort && g.items.length > 1 ? `<button class="btn m-sort" data-sortkids="loose">⇅ 1…10</button>` : ""}</div>`}
         <div class="m-children">${g.items.map(row).join("") || `<div class="conn-empty">Vide</div>`}</div>
       </div>`).join("") || `<div class="empty-state"><b>Rien ici</b>${q ? "Aucun résultat pour ce filtre." : "Cette formation est vide."}</div>`}</div>
   </div>`;
@@ -528,6 +542,61 @@ function renderManage() {
     if (x.type === "cours") DB.children(x.id).forEach((k) => set(k.id));
     renderManage();
   }));
+  // ───── Réorganiser ─────
+  const siblings = (grp) => grp === "cours" ? cours
+    : grp === "loose" ? all.filter((x) => x.type !== "cours" && !(x.parentId && DB.get(x.parentId)?.formationId === f.id)).sort(DB.byOrder)
+    : DB.children(grp).filter((x) => x.formationId === f.id);
+  const applyOrder = async (list) => {
+    await DB.reorder(list);
+    renderManage();
+    renderTree();
+  };
+  const sortNatural = (grp) => applyOrder([...siblings(grp)].sort((a, b) => natural(a.title || "", b.title || "")));
+  $("#mSortCours")?.addEventListener("click", () => { sortNatural("cours"); toast("Cours triés : 1, 2… 10"); });
+  $$("[data-sortkids]").forEach((b) => b.addEventListener("click", () => { sortNatural(b.dataset.sortkids); toast("Chapitres triés : 1, 2… 10"); }));
+  $$(".m-row").forEach((r) => {
+    const step = (d) => {
+      const list = [...siblings(r.dataset.grp)];
+      const i = list.findIndex((x) => x.id === r.dataset.rid);
+      const j = i + d;
+      if (i < 0 || j < 0 || j >= list.length) return;
+      [list[i], list[j]] = [list[j], list[i]];
+      applyOrder(list);
+    };
+    $("[data-up]", r)?.addEventListener("click", (e) => { e.preventDefault(); step(-1); });
+    $("[data-down]", r)?.addEventListener("click", (e) => { e.preventDefault(); step(1); });
+    r.addEventListener("dragstart", (e) => {
+      e.stopPropagation();
+      e.dataTransfer.setData("text/x-note", r.dataset.rid);
+      e.dataTransfer.effectAllowed = "move";
+      manage.dragGrp = r.dataset.grp;
+      r.classList.add("dragging");
+    });
+    r.addEventListener("dragend", () => { r.classList.remove("dragging"); $$(".m-row").forEach((x) => x.classList.remove("drop-before", "drop-after")); });
+    r.addEventListener("dragover", (e) => {
+      if (manage.dragGrp !== r.dataset.grp) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const after = e.clientY > r.getBoundingClientRect().top + r.offsetHeight / 2;
+      r.classList.toggle("drop-after", after);
+      r.classList.toggle("drop-before", !after);
+    });
+    r.addEventListener("dragleave", () => r.classList.remove("drop-before", "drop-after"));
+    r.addEventListener("drop", (e) => {
+      if (manage.dragGrp !== r.dataset.grp) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const id = e.dataTransfer.getData("text/x-note");
+      const after = r.classList.contains("drop-after");
+      r.classList.remove("drop-before", "drop-after");
+      if (!id || id === r.dataset.rid) return;
+      const list = siblings(r.dataset.grp).filter((x) => x.id !== id);
+      const at = list.findIndex((x) => x.id === r.dataset.rid) + (after ? 1 : 0);
+      list.splice(at, 0, DB.get(id));
+      applyOrder(list);
+    });
+  });
+
   $("#mAll").addEventListener("click", () => {
     if (manage.selected.size) manage.selected.clear();
     else groups.forEach((g) => { if (g.c) manage.selected.add(g.c.id); g.items.forEach((x) => manage.selected.add(x.id)); });
@@ -558,7 +627,7 @@ function renderManage() {
     const sel = [...manage.selected].map((id) => DB.get(id)).filter(Boolean);
     const hasCours = sel.some((x) => x.type === "cours");
     const options = DB.formations().map((fo) => {
-      const cs = DB.everything().filter((x) => x.type === "cours" && x.formationId === fo.id && !manage.selected.has(x.id)).sort((a, b) => a.createdAt - b.createdAt);
+      const cs = DB.everything().filter((x) => x.type === "cours" && x.formationId === fo.id && !manage.selected.has(x.id)).sort(DB.byOrder);
       return `<optgroup label="${esc(fo.name)}"><option value="${fo.id}|">${esc(fo.name)} — sans cours</option>
         ${hasCours ? "" : cs.map((c) => `<option value="${fo.id}|${c.id}">${esc(fo.name)} › ${esc(c.title || "Sans titre")}</option>`).join("")}</optgroup>`;
     }).join("");
@@ -618,7 +687,7 @@ function renderQuiz() {
 
 function drawQuizSetup() {
   const sources = quizSources();
-  const cours = DB.all().filter((n) => n.type === "cours").sort((a, b) => a.createdAt - b.createdAt);
+  const cours = DB.all().filter((n) => n.type === "cours").sort(DB.byOrder);
   const groups = [
     ...cours.map((c) => ({ c, items: sources.filter((n) => n.parentId === c.id || n.id === c.id) })),
     { c: null, items: sources.filter((n) => n.type !== "cours" && !(n.parentId && DB.get(n.parentId))) },
@@ -807,7 +876,7 @@ function renderNote() {
     <button class="icon-btn" id="exportMd" title="Télécharger en Markdown"><svg viewBox="0 0 24 24"><path d="M12 3v12m-5-5 5 5 5-5M5 21h14"/></svg></button>
     <button class="icon-btn" id="delNote" title="Supprimer"><svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button>`;
 
-  const cours = DB.all().filter((n) => n.type === "cours" && n.id !== note.id).sort((a, b) => a.createdAt - b.createdAt);
+  const cours = DB.all().filter((n) => n.type === "cours" && n.id !== note.id).sort(DB.byOrder);
   const missing = DB.outgoingTitles(note).filter((t) => !DB.byTitle(t));
 
   $("#view").innerHTML = `
@@ -1400,7 +1469,7 @@ function startImport(rawEntries) {
     }[opts.mode];
 
     const destF = opts.dest !== "__new" ? DB.getFormation(opts.dest) : null;
-    const coursList = destF ? DB.everything().filter((n) => n.type === "cours" && n.formationId === destF.id).sort((a, b) => a.createdAt - b.createdAt) : [];
+    const coursList = destF ? DB.everything().filter((n) => n.type === "cours" && n.formationId === destF.id).sort(DB.byOrder) : [];
     $("#importPlan").innerHTML = plan.map((g) => {
       const f = g.fid ? DB.getFormation(g.fid) : null;
       const matched = g.fiches.filter((e) => e.match);
@@ -1749,6 +1818,7 @@ function openSettings() {
 let modalLocked = false;
 function modal(html, { lock = false } = {}) {
   modalLocked = lock;
+  $("#modal").className = "modal";
   $("#modal").innerHTML = html;
   $("#modalOverlay").hidden = false;
   $$("[data-close]", $("#modal")).forEach((b) => b.addEventListener("click", () => closeModal(true)));
@@ -1832,6 +1902,7 @@ async function init() {
   await DB.openDB();
   await ensureFormations();
   initPilot({ modal, closeModal, toast, go, setCrumbs, renderMd });
+  initCerts({ modal, closeModal, toast, go, setCrumbs });
   if (!DB.everything().length && !localStorage.getItem("synapse.seeded")) {
     await seed();
     try { localStorage.setItem("synapse.seeded", "1"); } catch {}
@@ -1928,6 +1999,9 @@ async function init() {
   window.addEventListener("drop", (e) => {
     if (!hasFiles(e)) return;
     e.preventDefault(); dragDepth = 0; $("#dropzone").hidden = true;
+    // Sur la page Diplômes, une image ou un PDF déposé devient un diplôme.
+    const first = e.dataTransfer.files[0];
+    if (location.hash === "#/certs" && first && (/^image\//.test(first.type) || /\.pdf$/i.test(first.name))) return addCertFromFile(first);
     filesFromDrop(e.dataTransfer).then(startImport).catch((err) => { console.error(err); toast("Impossible de lire ces fichiers", true); });
   });
 

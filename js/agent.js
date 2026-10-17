@@ -90,7 +90,7 @@ async function execTool(name, args = {}) {
       return {
         count: list.length,
         notes: list
-          .sort((a, b) => a.createdAt - b.createdAt)
+          .sort(DB.byOrder)
           .slice(0, 300)
           .map((n) => ({
             id: n.id, title: n.title || "Sans titre", type: n.type,

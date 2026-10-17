@@ -13,6 +13,25 @@ async function pdfjs() {
   return lib;
 }
 
+// Dessine la première page d'un PDF dans une image (aperçu), largeur en pixels.
+export async function renderFirstPage(blob, width = 720) {
+  const { getDocument } = await pdfjs();
+  const doc = await getDocument({ data: new Uint8Array(await blob.arrayBuffer()) }).promise;
+  const page = await doc.getPage(1);
+  const base = page.getViewport({ scale: 1 });
+  const viewport = page.getViewport({ scale: width / base.width });
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.round(viewport.width);
+  canvas.height = Math.round(viewport.height);
+  const ctx = canvas.getContext("2d");
+  ctx.fillStyle = "#fff";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  // intent "print" : rendu d'une traite, sans requestAnimationFrame (qui s'arrête si l'onglet est en arrière-plan).
+  await page.render({ canvasContext: ctx, viewport, intent: "print" }).promise;
+  await doc.destroy();
+  return canvas.toDataURL("image/jpeg", 0.82);
+}
+
 export async function extractText(blob) {
   const { getDocument } = await pdfjs();
   const doc = await getDocument({ data: new Uint8Array(await blob.arrayBuffer()) }).promise;

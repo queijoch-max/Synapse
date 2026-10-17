@@ -174,8 +174,21 @@ export function backlinks(note) {
   );
 }
 
+// Ordre choisi par l'utilisateur (champ "order"), sinon ordre de création : les nouveautés arrivent en dernier.
+export const byOrder = (a, b) => (a.order ?? a.createdAt) - (b.order ?? b.createdAt) || a.createdAt - b.createdAt;
+
 export function children(id) {
-  return everything().filter((n) => n.parentId === id).sort((a, b) => (a.order ?? a.createdAt) - (b.order ?? b.createdAt) || a.createdAt - b.createdAt);
+  return everything().filter((n) => n.parentId === id).sort(byOrder);
+}
+
+// Enregistre un nouvel ordre pour une liste de notes (cours d'une formation, ou chapitres d'un cours).
+export async function reorder(list) {
+  for (const [i, n] of list.entries()) {
+    if (n.order === i) continue;
+    n.order = i;
+    cache.set(n.id, n);
+    await req(db.transaction(STORE, "readwrite").objectStore(STORE).put(n));
+  }
 }
 
 export function edges() {

@@ -19,6 +19,8 @@ Une seule app, **100 % gratuite**, avec deux espaces accessibles depuis les ongl
 | Ajouter ses propres fiches | Bouton **📎 Ma fiche** sur un chapitre : Markdown, texte, HTML, Word (.docx) ou PDF. Dans un import de dossier, une fiche est attachée automatiquement à son chapitre si elle porte le même nom (`Chapter 1.md`, `Chapter 1 - fiche.pdf`, `Chapter 1 synthèse.docx`) ou si elle est rangée dans un sous-dossier `Fiches` / `Synthèses` du module. Les chapitres qui ont déjà une fiche ne consomment pas de requête IA. Ces fiches sont cherchables et servent aux quiz et à l'assistant |
 | PDF → fiche synthèse | L'IA rédige une fiche par chapitre (notions clés reliées, exemples, pièges, questions de révision), une par une en arrière-plan. Le bouton **✦ Générer les fiches** d'un module permet de reprendre plus tard |
 | Ranger et faire le ménage | Page **🗂️ Gérer** (ou « Sélectionner… » sur un module) : cocher plusieurs cours, chapitres ou notes, puis les **supprimer** ou les **déplacer** vers un autre module ou une autre formation. Cocher un cours coche aussi ses chapitres. Supprimer un module propose aussi de supprimer ses chapitres |
+| Réorganiser | Sur la page **🗂️ Gérer** : glisser-déposer (poignée ⋮⋮) ou flèches ↑ ↓ pour changer l'ordre des cours dans la formation et des chapitres dans un cours. Les boutons **⇅ 1, 2… 10** trient automatiquement par nom dans l'ordre naturel (Chapter 2 avant Chapter 10). L'ordre choisi s'applique partout : barre latérale, accueil, quiz, import |
+| Exposer ses diplômes | Page **🏆 Diplômes** : un mur des certificats et diplômes obtenus. On ajoute une image ou un PDF (bouton « + Ajouter » ou glisser-déposer) avec l'intitulé, l'organisme, la date, la formation liée, les compétences et un lien de vérification. Clic sur une carte pour l'afficher en grand, la télécharger ou la vérifier. Filtre par formation |
 | S'entraîner | Page **🎯 Quiz**, ou bouton Quiz sur une fiche ou un module : QCM et vrai/faux sur les fiches choisies, corrigés avec explications. Les questions déjà posées sont mémorisées et ne reviennent jamais |
 
 ## 🚀 Onglet Suivi de projet
@@ -44,7 +46,7 @@ La **météo** vient d'Open-Meteo (gratuit, sans clé) : on choisit sa ville dan
 - **Coût en requêtes** : une fiche IA = 1 requête par PDF ; un quiz = 1 requête.
 - **Confidentialité** : avec l'offre gratuite, Google peut utiliser les contenus envoyés pour améliorer ses modèles. Mieux vaut ne rien envoyer de confidentiel à l'IA.
 - **Les données vivent dans le navigateur.** Pour changer d'appareil ou de navigateur : **Réglages → Exporter tout (.json)**, puis **Importer** de l'autre côté. Exporter une sauvegarde régulièrement est recommandé : vider les données du site efface tout.
-- La sauvegarde .json contient **les deux onglets** : formations, notes, fiches, texte des PDF, mais aussi tâches, projets, agenda, bloc-notes et post-its. Elle ne contient **pas les fichiers PDF eux-mêmes** (trop lourds). Il faut donc conserver les PDF d'origine : on peut les réimporter, et les chapitres déjà présents sont ignorés.
+- La sauvegarde .json contient **les deux onglets** : formations, notes, fiches, texte des PDF, mais aussi tâches, projets, agenda, bloc-notes, post-its et diplômes (avec leur aperçu). Elle ne contient **pas les fichiers originaux** (PDF des cours, fichiers des diplômes : trop lourds). Il faut donc conserver les PDF d'origine : on peut les réimporter, et les chapitres déjà présents sont ignorés.
 - Une sauvegarde de la première version de Synapse s'importe telle quelle dans Synapse V2. Les deux versions utilisent des bases séparées dans le navigateur et ne se gênent pas.
 
 ## Activer l'IA (1 minute)
@@ -96,6 +98,7 @@ css/style.css     thème sombre
 css/pilot.css     styles de l'onglet Suivi de projet
 js/app.js         interface, les deux espaces, onglets de formation, éditeur, import, quiz, panneaux IA, réglages
 js/pilot.js       suivi de projet : tableau de bord, tâches, projets, agenda, bloc-notes, post-its, météo
+js/certs.js       vitrine des certificats et diplômes
 js/agent.js       agent : outils (lister / chercher / lire / créer une fiche) + boucle
 js/ai.js          appels IA (Gemini gratuit ou Claude) : explications, PDF → fiche, quiz
 js/pdf.js         lecture locale du texte des PDF (pdf.js)
